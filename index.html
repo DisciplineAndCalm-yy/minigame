@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#05070f" />
+    <title>迷你游戏厅 · Mini Arcade</title>
+    <style>
+      :root {
+        --neon-cyan: #6fe3ff;
+        --neon-violet: #c08bff;
+        --neon-pink: #ff8fb1;
+        --neon-gold: #ffd76e;
+        --cute-mint: #a8e6c9;
+        --glass: rgba(255, 255, 255, 0.06);
+        --stroke: rgba(160, 200, 255, 0.22);
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      html,
+      body {
+        height: 100%;
+        overflow: hidden;
+      }
+
+      body {
+        font-family: "Baloo 2", "Nunito", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+        background: #04060f;
+        color: #eaf2ff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+
+      /* ---------------- 环境层：极光 + 星球 + 云朵 ---------------- */
+      .ambient {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        overflow: hidden;
+        pointer-events: none;
+        background:
+          radial-gradient(1400px 900px at 15% 8%, rgba(120, 80, 240, 0.32), transparent 62%),
+          radial-gradient(1200px 800px at 88% 88%, rgba(20, 170, 210, 0.26), transparent 60%),
+          radial-gradient(900px 700px at 55% 120%, rgba(255, 90, 170, 0.2), transparent 60%),
+          linear-gradient(180deg, #070a1c 0%, #05060f 60%, #03040a 100%);
+      }
+
+      .blob {
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(70px);
+        mix-blend-mode: screen;
+        opacity: 0.55;
+        animation: drift 22s ease-in-out infinite;
+      }
+
+      .blob.b1 {
+        width: 46vw;
+        height: 46vw;
+        left: -8vw;
+        top: -10vh;
+        background: radial-gradient(circle, rgba(120, 90, 255, 0.9), transparent 68%);
+      }
+
+      .blob.b2 {
+        width: 40vw;
+        height: 40vw;
+        right: -6vw;
+        top: 22vh;
+        background: radial-gradient(circle, rgba(0, 190, 255, 0.75), transparent 68%);
+        animation-delay: -7s;
+        animation-duration: 27s;
+      }
+
+      .blob.b3 {
+        width: 38vw;
+        height: 38vw;
+        left: 26vw;
+        bottom: -14vh;
+        background: radial-gradient(circle, rgba(255, 110, 190, 0.7), transparent 68%);
+        animation-delay: -13s;
+        animation-duration: 25s;
+      }
+
+      @keyframes drift {
+        0%,
+        100% {
+          transform: translate3d(0, 0, 0) scale(1);
+        }
+        33% {
+          transform: translate3d(6vw, 5vh, 0) scale(1.12);
+        }
+        66% {
+          transform: translate3d(-5vw, -4vh, 0) scale(0.94);
+        }
+      }
+
+      .stars {
+        position: absolute;
+        inset: -50% 0 0 0;
+        background-image:
+          radial-gradient(1.6px 1.6px at 20% 12%, rgba(255, 255, 255, 0.9), transparent),
+          radial-gradient(1.4px 1.4px at 68% 22%, rgba(190, 220, 255, 0.8), transparent),
+          radial-gradient(1.8px 1.8px at 42% 44%, rgba(255, 255, 255, 0.7), transparent),
+          radial-gradient(1.2px 1.2px at 82% 58%, rgba(210, 240, 255, 0.75), transparent),
+          radial-gradient(1.5px 1.5px at 12% 68%, rgba(255, 255, 255, 0.65), transparent),
+          radial-gradient(1.3px 1.3px at 58% 78%, rgba(255, 220, 240, 0.7), transparent),
+          radial-gradient(1.7px 1.7px at 90% 34%, rgba(255, 255, 255, 0.6), transparent);
+        background-size: 520px 520px;
+        animation: twinkle 6s ease-in-out infinite;
+      }
+
+      @keyframes twinkle {
+        0%,
+        100% {
+          opacity: 0.35;
+          transform: translateY(0);
+        }
+        50% {
+          opacity: 0.9;
+          transform: translateY(-18px);
+        }
+      }
+
+      .cloud {
+        position: absolute;
+        background: radial-gradient(circle at 30% 40%, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 70%);
+        border-radius: 50%;
+        filter: blur(18px);
+        animation: sail linear infinite;
+      }
+
+      @keyframes sail {
+        from {
+          transform: translateX(-30vw);
+        }
+        to {
+          transform: translateX(130vw);
+        }
+      }
+
+      /* ---------------- 主结构 ---------------- */
+      .stage {
+        position: relative;
+        z-index: 1;
+        height: 100%;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        padding: 14px 12px;
+      }
+
+      .title {
+        font-weight: 800;
+        letter-spacing: 3px;
+        font-size: clamp(19px, 4.2vw, 27px);
+        background: linear-gradient(100deg, var(--neon-cyan) 0%, var(--neon-violet) 45%, var(--neon-pink) 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-align: center;
+        filter: drop-shadow(0 0 22px rgba(130, 170, 255, 0.45));
+        animation: floaty 4.5s ease-in-out infinite;
+      }
+
+      .subtitle {
+        font-size: 11px;
+        letter-spacing: 4px;
+        color: rgba(190, 214, 255, 0.55);
+        text-transform: uppercase;
+        margin-top: -8px;
+      }
+
+      @keyframes floaty {
+        0%,
+        100% {
+          transform: translateY(0);
+        }
+        50% {
+          transform: translateY(-6px);
+        }
+      }
+
+      .frame {
+        position: relative;
+        isolation: isolate;
+        height: min(74vh, 720px);
+        aspect-ratio: 9 / 16;
+        max-width: 94vw;
+        border-radius: 30px;
+        padding: 8px;
+        background: linear-gradient(160deg, rgba(130, 170, 255, 0.4), rgba(40, 60, 130, 0.12));
+        box-shadow:
+          0 0 0 1px var(--stroke),
+          0 30px 70px rgba(0, 8, 30, 0.75),
+          0 0 80px rgba(90, 140, 255, 0.2);
+      }
+
+      .frame::before {
+        content: "";
+        position: absolute;
+        inset: -3px;
+        z-index: -1;
+        border-radius: 33px;
+        background: conic-gradient(
+          from 0deg,
+          var(--neon-cyan),
+          var(--neon-violet),
+          var(--neon-pink),
+          var(--neon-gold),
+          var(--neon-cyan)
+        );
+        filter: blur(14px);
+        opacity: 0.6;
+        animation: spin 14s linear infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+        border-radius: 24px;
+        touch-action: none;
+        cursor: pointer;
+        background: #05070f;
+      }
+
+      /* ---------------- 页脚：播放器 ---------------- */
+      .footbar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 14px;
+        border-radius: 999px;
+        background: var(--glass);
+        border: 1px solid var(--stroke);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        box-shadow: 0 10px 30px rgba(0, 6, 24, 0.5);
+        min-width: 240px;
+        justify-content: space-between;
+      }
+
+      .track {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 12.5px;
+        color: rgba(215, 232, 255, 0.85);
+        letter-spacing: 0.5px;
+      }
+
+      .eq {
+        display: flex;
+        align-items: flex-end;
+        gap: 3px;
+        height: 16px;
+      }
+
+      .eq i {
+        width: 3px;
+        height: 4px;
+        border-radius: 2px;
+        background: linear-gradient(180deg, var(--neon-cyan), var(--neon-violet));
+        opacity: 0.35;
+      }
+
+      .footbar.playing .eq i {
+        opacity: 1;
+        animation: bounce 0.9s ease-in-out infinite;
+      }
+
+      .footbar.playing .eq i:nth-child(2) {
+        animation-delay: 0.18s;
+      }
+
+      .footbar.playing .eq i:nth-child(3) {
+        animation-delay: 0.36s;
+      }
+
+      .footbar.playing .eq i:nth-child(4) {
+        animation-delay: 0.1s;
+      }
+
+      @keyframes bounce {
+        0%,
+        100% {
+          height: 4px;
+        }
+        50% {
+          height: 16px;
+        }
+      }
+
+      .mute-btn {
+        border: 1px solid var(--stroke);
+        background: rgba(255, 255, 255, 0.05);
+        color: #dbe8ff;
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        font-size: 15px;
+        line-height: 1;
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+        transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+      }
+
+      .mute-btn:hover {
+        transform: scale(1.12) rotate(-8deg);
+        background: rgba(140, 180, 255, 0.16);
+        border-color: rgba(150, 200, 255, 0.5);
+      }
+
+      .mute-btn:active {
+        transform: scale(0.94);
+      }
+
+      .mute-btn.off {
+        color: #ff9aa9;
+        border-color: rgba(255, 140, 160, 0.45);
+      }
+
+      @media (max-height: 700px) {
+        .subtitle {
+          display: none;
+        }
+        .frame {
+          height: 80vh;
+        }
+      }
+
+      @media (max-width: 420px) {
+        .footbar {
+          min-width: 0;
+          width: 100%;
+          max-width: 420px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="ambient">
+      <div class="blob b1"></div>
+      <div class="blob b2"></div>
+      <div class="blob b3"></div>
+      <div class="stars"></div>
+      <div class="cloud" style="width: 34vw; height: 14vh; top: 12%; animation-duration: 46s;"></div>
+      <div class="cloud" style="width: 26vw; height: 11vh; top: 62%; animation-duration: 62s; animation-delay: -20s;"></div>
+    </div>
+
+    <div class="stage">
+      <div>
+        <div class="title">迷你游戏厅</div>
+        <div class="subtitle">Mini Arcade</div>
+      </div>
+
+      <div class="frame">
+        <canvas id="game"></canvas>
+      </div>
+
+      <div class="footbar" id="footbar">
+        <div class="track">
+          <span class="eq"><i></i><i></i><i></i><i></i></span>
+          <span id="trackName">准备中…</span>
+        </div>
+        <button class="mute-btn" id="muteBtn" title="音乐开关" aria-label="音乐开关">🔊</button>
+      </div>
+    </div>
+
+    <script src="js/core/audio.js"></script>
+    <script src="js/core/game.js"></script>
+    <script src="js/core/sheep.js"></script>
+    <script src="js/core/home.js"></script>
+    <script src="js/core/app.js"></script>
+    <script src="js/web/main.js"></script>
+  </body>
+</html>
