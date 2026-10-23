@@ -5,6 +5,9 @@
 const AudioEngine = require('../core/audio.js');
 const MergeGame = require('../core/game.js');
 const SheepGame = require('../core/sheep.js');
+const StarGame = require('../core/lights.js');
+const StarDash = require('../core/dash.js');
+const StarQuest = require('../core/quest.js');
 const HomeScene = require('../core/home.js');
 const App = require('../core/app.js');
 
@@ -148,7 +151,19 @@ function playSfx(name, level) {
 const scenes = {
   home: new HomeScene({ width: W, height: H, storage: storage, audio: audio }),
   merge: new MergeGame({ width: W, height: H, sound: playSfx, storage: storage, audio: audio }),
-  sheep: new SheepGame({ width: W, height: H, sound: playSfx, storage: storage, audio: audio }),
+  sheep: new SheepGame({
+    width: W,
+    height: H,
+    sound: playSfx,
+    storage: storage,
+    audio: audio,
+    canvasFactory: function () {
+      return wx.createCanvas();
+    },
+  }),
+  lumina: new StarGame({ width: W, height: H, sound: playSfx, storage: storage, audio: audio }),
+  dash: new StarDash({ width: W, height: H, sound: playSfx, storage: storage, audio: audio }),
+  quest: new StarQuest({ width: W, height: H, sound: playSfx, storage: storage, audio: audio }),
 };
 
 const app = new App({ scenes: scenes, width: W, height: H, audio: audio, start: 'home' });

@@ -10,6 +10,7 @@
   const trackEl = document.getElementById('trackName');
   const footbar = document.getElementById('footbar');
   const muteBtn = document.getElementById('muteBtn');
+  const nextTrackBtn = document.getElementById('nextTrackBtn');
 
   /* ---------------- 本地存储 ---------------- */
   const storage = {
@@ -69,6 +70,30 @@
       audio: audio,
     }),
     sheep: new window.SheepGame({
+      width: size.w,
+      height: size.h,
+      sound: playSfx,
+      storage: storage,
+      audio: audio,
+      canvasFactory: function () {
+        return document.createElement('canvas');
+      },
+    }),
+    lumina: new window.StarGame({
+      width: size.w,
+      height: size.h,
+      sound: playSfx,
+      storage: storage,
+      audio: audio,
+    }),
+    dash: new window.StarDash({
+      width: size.w,
+      height: size.h,
+      sound: playSfx,
+      storage: storage,
+      audio: audio,
+    }),
+    quest: new window.StarQuest({
       width: size.w,
       height: size.h,
       sound: playSfx,
@@ -184,6 +209,15 @@
       unlockAudio();
       audio.toggleMute();
       syncMuteButton();
+    });
+  }
+
+  if (nextTrackBtn) {
+    nextTrackBtn.addEventListener('click', function () {
+      unlockAudio();
+      const track = app.nextTrack();
+      if (trackEl) trackEl.textContent = audio.trackTitle(track);
+      if (footbar) footbar.classList.add('playing');
     });
   }
 

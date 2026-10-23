@@ -43,15 +43,18 @@
 
   /* ---------------- 关卡难度梯度 ---------------- */
   // 槽位恒为 7；难度靠「花色种类」「堆叠层数」与「顶层同色上限 cap」提升
-  // cap = 顶层最多几张同色：越大越容易（可当面三连），越小越难（须向下挖）
+  // cap=顶层最多几张同色：越小越难（必须向下挖，无脑连点会塞满槽位而失败）
   const LEVELS = [
-    { tiles: 12, types: 3, depth: 1, cap: 3 }, // 第 1 关：熟悉关，单层摆放
-    { tiles: 24, types: 5, depth: 3, cap: 3 }, // 第 2 关：开始需要规划
-    { tiles: 27, types: 6, depth: 3, cap: 3 },
-    { tiles: 30, types: 6, depth: 3, cap: 3 },
-    { tiles: 33, types: 7, depth: 3, cap: 3 },
-    { tiles: 36, types: 7, depth: 3, cap: 3 },
-    { tiles: 39, types: 7, depth: 4, cap: 3 },
+    { tiles: 12, types: 3, depth: 1, cap: 3 }, // 1 熟悉关
+    { tiles: 27, types: 6, depth: 3, cap: 2 }, // 2 起必须规划，连点必败
+    { tiles: 30, types: 7, depth: 4, cap: 2 }, // 3
+    { tiles: 36, types: 8, depth: 4, cap: 2 }, // 4
+    { tiles: 39, types: 8, depth: 5, cap: 2 }, // 5
+    { tiles: 42, types: 9, depth: 5, cap: 2 }, // 6
+    { tiles: 45, types: 9, depth: 5, cap: 2 }, // 7
+    { tiles: 48, types: 10, depth: 5, cap: 2 }, // 8
+    { tiles: 51, types: 10, depth: 6, cap: 2 }, // 9
+    { tiles: 54, types: 11, depth: 6, cap: 2 }, // 10
   ];
 
   function levelConfig(level) {
@@ -711,6 +714,9 @@
     opts = opts || {};
     this.opts = opts;
     this.storage = opts.storage || null;
+    this.canvasFactory = opts.canvasFactory || null;
+    this.sprites = null;
+    this._spriteSize = 0;
     this.width = opts.width || 0;
     this.height = opts.height || 0;
     this.nav = null;
@@ -801,6 +807,7 @@
     this.width = w;
     this.height = h;
     this._layout();
+    this._spriteSize = 0; // 尺寸变化后重建精灵缓存
     for (let i = 0; i < this.tiles.length; i++) {
       const t = this.tiles[i];
       if (t.state === 'board') {
@@ -809,6 +816,79 @@
         t.y = p.y;
       }
     }
+  };
+
+  // 建立（或复用）动物牌精灵缓存：每种动物烘焙成两张离屏图（睁眼 / 闭眼）
+  // 之后每帧只需 drawImage，避免大量 createLinearGradient / clip 带来的卡顿
+  AnimalGame.prototype._ensureSprites = function () {
+    const L = Math.round(this.tileSize); // 逻辑牌面尺寸
+    if (this._spriteSize === L && this.sprites) return;
+    this._spriteSize = L;
+
+    const factory =
+      this.canvasFactory ||
+      (typeof wx !== 'undefined' && wx.createCanvas
+        ? function () {
+            return wx.createCanvas();
+          }
+        : typeof document !== 'undefined'
+          ? function () {
+              return document.createElement('canvas');
+            }
+          : null);
+
+    if (!factory || L <= 0) {
+      this.sprites = null;
+      return;
+    }
+
+    const BAKE = 2; // 2x 烘焙，高 DPI 下更清晰
+    const BOXF = 1.5; // 画布相对牌面的外扩比，容纳耳朵等
+    const pix = L * BAKE; // 牌面实际像素
+    const box = Math.round(L * BOXF * BAKE); // 画布像素
+    const n = ANIMALS.length;
+    const open = [];
+    const closed = [];
+    for (let type = 0; type < n; type++) {
+      open.push(this._bakeSprite(factory, type, pix, box, false));
+      closed.push(this._bakeSprite(factory, type, pix, box, true));
+    }
+    this.sprites = { open: open, closed: closed, L: L, boxLog: L * BOXF };
+  };
+
+  AnimalGame.prototype._bakeSprite = function (factory, type, pix, box, blink) {
+    const cv = factory();
+    cv.width = box;
+    cv.height = box;
+    const g = cv.getContext('2d');
+    const c = box / 2;
+    const anim = { blink: blink ? 1 : 0, tilt: 0, squashX: 1, squashY: 1 };
+    drawAnimalTile(g, c, c, pix, type, 1, anim);
+    return cv;
+  };
+
+  // 绘制一张动物牌：优先使用精灵缓存（带挤压/倾斜），无缓存时回退直绘
+  AnimalGame.prototype._drawTile = function (ctx, x, y, size, type, alpha, anim) {
+    if (this.sprites) {
+      const blink = anim && anim.blink > 0.55;
+      const arr = blink ? this.sprites.closed : this.sprites.open;
+      const sprite = arr[type];
+      if (sprite) {
+        const k = size / this.sprites.L;
+        const box = this.sprites.boxLog * k;
+        ctx.save();
+        ctx.globalAlpha = alpha == null ? 1 : alpha;
+        ctx.translate(x, y);
+        if (anim && (anim.tilt || anim.squashX !== 1 || anim.squashY !== 1)) {
+          ctx.rotate(anim.tilt || 0);
+          ctx.scale(anim.squashX || 1, anim.squashY || 1);
+        }
+        ctx.drawImage(sprite, -box / 2, -box / 2, box, box);
+        ctx.restore();
+        return;
+      }
+    }
+    drawAnimalTile(ctx, x, y, size, type, alpha, anim);
   };
 
   AnimalGame.prototype._cellPos = function (col, row, z) {
@@ -1246,6 +1326,9 @@
   /* ----------------------------- 特效 ----------------------------- */
   AnimalGame.prototype._burst = function (x, y, color, kind, type) {
     const n = kind === 'confetti' ? 30 : kind === 'rain' ? 3 : 16;
+    // 粒子上限：避免密集连消时数组无限膨胀拖慢渲染
+    const CAP = 220;
+    if (this.particles.length > CAP) return;
     for (let i = 0; i < n; i++) {
       const a = Math.random() * TAU;
       const spd = 70 + Math.random() * 220;
@@ -1726,11 +1809,23 @@
   };
 
   AnimalGame.prototype._board = function (ctx) {
+    this._ensureSprites();
     const arr = this.tiles;
+
+    // 单次遍历求出每格顶层（避免 O(n²) 的 _isTop 反复判断）
+    const topZ = {};
+    for (let i = 0; i < arr.length; i++) {
+      const t = arr[i];
+      if (t.state !== 'board') continue;
+      const key = t.col + ',' + t.row;
+      const z = topZ[key];
+      if (z === undefined || t.z > z) topZ[key] = t.z;
+    }
+
     for (let i = 0; i < arr.length; i++) {
       const t = arr[i];
       if (t.state !== 'board' && t.state !== 'flying') continue;
-      const isTop = t.state === 'flying' ? true : this._isTop(t);
+      const isTop = t.state === 'flying' ? true : topZ[t.col + ',' + t.row] === t.z;
       const pop = t.state === 'flying' ? 1 : t.spawnT < 0.28 ? 0.6 + 0.4 * easeOutBack(t.spawnT / 0.28) : 1;
 
       // 被压住的小动物微微探头 + 头顶小气泡提示
@@ -1748,7 +1843,7 @@
         squashY: t.sqy || 1,
       };
 
-      drawAnimalTile(ctx, t.x, y, this.tileSize * pop, t.type, isTop ? 1 : 0.82, anim);
+      this._drawTile(ctx, t.x, y, this.tileSize * pop, t.type, isTop ? 1 : 0.82, anim);
 
       // 探头的小气泡
       if (lift > 0.05) {
@@ -1814,7 +1909,7 @@
       if (t.pop > 0) {
         pop = 1 + Math.sin(t.pop * Math.PI) * 0.35;
       }
-      drawAnimalTile(ctx, x, y - (t.pop > 0 ? Math.sin(t.pop * Math.PI) * Ts * 0.22 : 0), Ts * pop, t.type, 1, {
+      this._drawTile(ctx, x, y - (t.pop > 0 ? Math.sin(t.pop * Math.PI) * Ts * 0.22 : 0), Ts * pop, t.type, 1, {
         blink: t.blink || 0,
         tilt: t.tilt || 0,
         squashX: t.sqx || 1,
