@@ -153,12 +153,47 @@
     this.samples = {}; // 真实音频采样：name -> AudioBuffer
     this.sampleBase = '';
     this.sampleLoader = null;
+    this.nativePlayer = null; // 可选：原生播放器（微信真机走 InnerAudioContext）
   }
 
   // 设置真实音频加载器：loader(path) -> Promise<ArrayBuffer> | ArrayBuffer
   AudioEngine.prototype.setSampleLoader = function (loader, base) {
     this.sampleLoader = loader;
     this.sampleBase = base || '';
+  };
+
+  // 设置原生采样播放器（微信小游戏真机用 InnerAudioContext 更稳）
+  // 需实现 canPlay(name) / play(name, gain, rate, muted)
+  AudioEngine.prototype.setNativePlayer = function (player) {
+    this.nativePlayer = player;
+  };
+
+  // 解码单个 ArrayBuffer，兼容「返回 Promise」与「回调」两种实现
+  AudioEngine.prototype._decode = function (data) {
+    const self = this;
+    if (!this.ctx || !data) return Promise.resolve(null);
+    const copy = data.slice ? data.slice(0) : data;
+    return new Promise(function (resolve) {
+      let settled = false;
+      function ok(buf) {
+        if (!settled) {
+          settled = true;
+          resolve(buf || null);
+        }
+      }
+      function fail() {
+        if (!settled) {
+          settled = true;
+          resolve(null);
+        }
+      }
+      try {
+        const ret = self.ctx.decodeAudioData(copy, ok, fail);
+        if (ret && typeof ret.then === 'function') ret.then(ok, fail);
+      } catch (e) {
+        fail();
+      }
+    });
   };
 
   // 批量加载真实音频样本（解码为 AudioBuffer），失败的键将被忽略
@@ -172,9 +207,7 @@
           return self.sampleLoader(self.sampleBase + name + '.wav');
         })
         .then(function (data) {
-          if (!data) return null;
-          const copy = data.slice ? data.slice(0) : data;
-          return Promise.resolve(self.ctx.decodeAudioData(copy));
+          return self._decode(data);
         })
         .then(function (buf) {
           if (buf) self.samples[name] = buf;
@@ -188,6 +221,11 @@
 
   // 播放真实样本；成功返回 true，未加载则返回 false（由调用方回退到合成音）
   AudioEngine.prototype.playSample = function (name, gain, rate) {
+    // 优先使用原生播放器（微信真机）
+    if (this.nativePlayer && this.nativePlayer.canPlay(name)) {
+      const ok = this.nativePlayer.play(name, gain, rate, this.muted);
+      if (ok) return true;
+    }
     if (!this.ctx) return false;
     const buf = this.samples[name];
     if (!buf) return false;
@@ -246,6 +284,9 @@
   AudioEngine.prototype.setMuted = function (m) {
     this.muted = !!m;
     if (this.master) this.master.gain.value = this.muted ? 0 : this.volume;
+    if (this.nativePlayer && this.nativePlayer.setMuted) {
+      this.nativePlayer.setMuted(this.muted);
+    }
     return this.muted;
   };
 

@@ -42,23 +42,26 @@
   const ANIMAL_SFX = ['rabbit', 'cat', 'bear', 'panda', 'pig', 'frog', 'dog', 'chicken', 'fox', 'penguin', 'sheep', 'monkey'];
 
   /* ---------------- 关卡难度梯度 ---------------- */
-  // 槽位恒为 7；难度只靠「花色种类」与「堆叠层数」提升
+  // 槽位恒为 7；难度靠「花色种类」「堆叠层数」与「顶层同色上限 cap」提升
+  // cap = 顶层最多几张同色：越大越容易（可当面三连），越小越难（须向下挖）
   const LEVELS = [
-    { tiles: 12, types: 3, depth: 1 }, // 第 1 关：熟悉关
-    { tiles: 54, types: 8, depth: 4 }, // 第 2 关：跳跃式进入高难（≈ 旧第 9 关）
-    { tiles: 57, types: 9, depth: 4 },
-    { tiles: 60, types: 10, depth: 4 },
-    { tiles: 63, types: 11, depth: 5 },
-    { tiles: 66, types: 12, depth: 5 },
+    { tiles: 12, types: 3, depth: 1, cap: 3 }, // 第 1 关：熟悉关，单层摆放
+    { tiles: 24, types: 5, depth: 3, cap: 3 }, // 第 2 关：开始需要规划
+    { tiles: 27, types: 6, depth: 3, cap: 3 },
+    { tiles: 30, types: 6, depth: 3, cap: 3 },
+    { tiles: 33, types: 7, depth: 3, cap: 3 },
+    { tiles: 36, types: 7, depth: 3, cap: 3 },
+    { tiles: 39, types: 7, depth: 4, cap: 3 },
   ];
 
   function levelConfig(level) {
     const base = LEVELS[Math.min(level - 1, LEVELS.length - 1)];
     const extra = Math.max(0, level - LEVELS.length);
     return {
-      tiles: base.tiles + extra * 4,
-      types: Math.min(ANIMALS.length, base.types),
+      tiles: base.tiles + extra * 6,
+      types: Math.min(ANIMALS.length, base.types + Math.min(5, extra)),
       depth: Math.min(6, base.depth + Math.floor(extra / 2)),
+      cap: base.cap,
     };
   }
 
@@ -776,8 +779,8 @@
 
     const boardTopY = this.hudH + 8;
     const boardBottomY = this.basketTop - 14;
-    const cols = 6;
-    const rows = 6;
+    const cols = 5;
+    const rows = 5;
     const S = Math.min((w - this.pad * 2) / cols, (boardBottomY - boardTopY) / rows) * 0.98;
     this.tileSize = S;
     this.gridCols = cols;
@@ -900,14 +903,88 @@
     }
     while (positions.length % 3 !== 0) positions.pop();
 
-    // 花色按「三张一组」分配再打乱，保证一定可消
+    // ---- 花色分配：既保证整体可解，又让顶层尽量不出现直接三连 ----
     const triples = positions.length / 3;
-    const typeList = [];
-    for (let t = 0; t < triples; t++) {
-      const ty = t % this.typeCount;
-      typeList.push(ty, ty, ty);
+    const K = this.typeCount;
+    const counts = new Array(K).fill(0);
+    for (let t = 0; t < triples; t++) counts[t % K] += 3; // 每种花色数量都是 3 的倍数
+    const remaining = counts.slice();
+
+    // 每个格子的牌按深度从顶到底，便于先安排「顶层」
+    const byCell = {};
+    for (let i = 0; i < positions.length; i++) {
+      const p = positions[i];
+      const key = p[0] + ',' + p[1];
+      (byCell[key] = byCell[key] || []).push(i);
     }
-    shuffleArr(typeList);
+    const cellKeys = Object.keys(byCell);
+    for (let ci = 0; ci < cellKeys.length; ci++) {
+      const list = byCell[cellKeys[ci]];
+      list.sort(function (a, b) {
+        return positions[b][2] - positions[a][2];
+      });
+    }
+
+    // 分配顺序：先所有格子的顶层，再第二层……（逐「层秩」展开）
+    const order = [];
+    let rank = 0;
+    let more = true;
+    while (more) {
+      more = false;
+      for (let ci = 0; ci < cellKeys.length; ci++) {
+        const list = byCell[cellKeys[ci]];
+        if (rank < list.length) {
+          order.push(list[rank]);
+          more = true;
+        }
+      }
+      rank++;
+    }
+
+    const typeOf = new Array(positions.length).fill(-1);
+    const surfaceUsed = new Array(K).fill(0);
+    const lastType = {};
+
+    // 顶层槽位（每格最上面一张）与其余槽位（浅→深）
+    const cellCount = cellKeys.length;
+    const surfaceIdx = order.slice(0, cellCount);
+    const deeperIdx = order.slice(cellCount);
+
+    // 选择花色：余额越均衡越优先；顶层每色最多 cap（形成「对子」）；
+    // 同格上下尽量不同色（避免白送连消）
+    const surfaceCap = cfg.cap || 2;
+    function chooseType(above, onSurface) {
+      let best = -1;
+      let bestScore = -1e9;
+      for (let ty = 0; ty < K; ty++) {
+        if (remaining[ty] <= 0) continue;
+        let score = remaining[ty] * 10;
+        if (onSurface && surfaceUsed[ty] >= surfaceCap) score -= 1e6;
+        if (above >= 0 && ty === above) score -= 60;
+        if (score > bestScore) {
+          bestScore = score;
+          best = ty;
+        }
+      }
+      if (best < 0) best = 0;
+      return best;
+    }
+
+    function assign(idx, onSurface) {
+      const p = positions[idx];
+      const key = p[0] + ',' + p[1];
+      const above = key in lastType ? lastType[key] : -1;
+      const ty = chooseType(above, onSurface);
+      remaining[ty]--;
+      if (onSurface) surfaceUsed[ty]++;
+      typeOf[idx] = ty;
+      lastType[key] = ty;
+    }
+
+    // 1) 顶层：均衡成对（顶层最多 2 张同色，需向下一层找第 3 张）
+    for (let i = 0; i < surfaceIdx.length; i++) assign(surfaceIdx[i], true);
+    // 2) 其余：浅→深填充，让第 3 张尽量靠近顶部
+    for (let i = 0; i < deeperIdx.length; i++) assign(deeperIdx[i], false);
 
     for (let i = 0; i < positions.length; i++) {
       const p = positions[i];
@@ -916,7 +993,7 @@
         col: p[0],
         row: p[1],
         z: p[2],
-        type: typeList[i],
+        type: typeOf[i],
         x: pos.x,
         y: pos.y,
         state: 'board',
